@@ -1,2 +1,8 @@
+streamlit
 gdown
 ultralytics
+opencv-python
+numpy
+Pillow
+torch
+torchvision
