@@ -7,4 +7,3 @@ Pillow
 torch
 torchvision
 PyYAML
-cv2
