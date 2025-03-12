@@ -1,72 +1,137 @@
 import gdown
-from ultralytics import YOLO
-import os
-import streamlit as st  # ✅ Streamlit importieren
 import cv2
-import tempfile  # ✅ Temporäre Datei-Speicherung
+import os
+from ultralytics import YOLO
+import numpy as np
+import streamlit as st
+import tempfile
 
-# --- GOOGLE DRIVE MODELL UND YAML LADEN ---
+# --- GOOGLE DRIVE MODEL UND YAML LADEN ---
 model_file_id = "1hzHnlqe3FCQ8fSOwIRY0SPh_UY1cUAoA"  # ID für das YOLO Modell
-yaml_file_id = "15clenJ6DdHJ9mwYXFeveTt15AbMnxg8g"   # ID für die YAML-Datei
+yaml_file_id = "1hzHnlqe3FCQ8fSOwIRY0SPh_UY1cUAoB"   # ID für die YAML-Datei
 
-# Modell herunterladen
+# Download des YOLO-Modells und der YAML-Datei von Google Drive
+def download_file_from_drive(file_id, output_path):
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, output_path, quiet=False)
+
+# YOLO-Modell und YAML-Datei herunterladen
 model_output_path = "best.pt"
-if not os.path.exists(model_output_path):
-    url = f"https://drive.google.com/uc?id={model_file_id}"
-    gdown.download(url, model_output_path, quiet=False)
-    print("✅ Modell heruntergeladen!")
-
-# YAML-Datei herunterladen
 yaml_output_path = "data.yaml"
+
+if not os.path.exists(model_output_path):
+    download_file_from_drive(model_file_id, model_output_path)
+
 if not os.path.exists(yaml_output_path):
-    url = f"https://drive.google.com/uc?id={yaml_file_id}"
-    gdown.download(url, yaml_output_path, quiet=False)
-    print("✅ YAML-Datei heruntergeladen!")
+    download_file_from_drive(yaml_file_id, yaml_output_path)
 
 # YOLO-Modell laden
 model = YOLO(model_output_path, data=yaml_output_path)
-print("✅ Modell erfolgreich geladen!")
-
-# --- STREAMLIT APP ---
 st.title("🔍 Stillstandserkennung mit YOLO")  # Titel der App
 
 # --- VIDEO UPLOAD ---
-uploaded_file = st.file_uploader("📂 Lade dein Video hoch", type=["mp4", "avi", "mov"])  # ✅ Benutzer kann Video hochladen
+uploaded_file = st.file_uploader("📂 Lade dein Video hoch", type=["mp4", "avi", "mov"])
 
 if uploaded_file is not None:
-    # ✅ Temporäre Datei speichern
+    # Temporäre Datei speichern
     temp_dir = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     temp_dir.write(uploaded_file.read())
     video_path = temp_dir.name
 
     st.success("✅ Video erfolgreich hochgeladen!")  # Erfolgsmeldung
-    st.video(video_path)  # ✅ Video in der App anzeigen
+    st.video(video_path)  # Zeige Video in der App an
 
-    # --- Stillstandserkennung --- 
-    cap = cv2.VideoCapture(video_path)  # Video mit OpenCV öffnen
-    frame_rate = cap.get(cv2.CAP_PROP_FPS)  # Frames pro Sekunde des Videos
+    # 2⃣ Video öffnen
+    cap = cv2.VideoCapture(video_path)
 
-    # Wir erstellen ein Display für jedes Frame im Video
+    # 3⃣ Ergebnisse-Ordner erstellen
+    output_dir = "Ergebnisse"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 4⃣ Video speichern
+    output_path = os.path.join(output_dir, "output_detected.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width, height = 1280, 720  # Kleinere Auflösung
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    # 5⃣ Stillstand-Tracking
+    stillstand_aktiv = False
+    stillstand_start = None
+
+    geplanter_stillstand = False
+    ungeplanter_stillstand = False
+
+    bewegungs_puffer = []  # Speichert die letzten Bewegungswerte
+    bewegungs_grenze = 2.0  # Schwellwert für Bewegung
+
+    prev_gray = None  # Vorheriges Graustufenbild für Bewegungserkennung
+
+    # 6⃣ Objekterkennung für jedes Frame
     while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
+        success, frame = cap.read()
+        if not success:
             break
+        
+        frame = cv2.resize(frame, (width, height))  # Video verkleinern
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # In Graustufen konvertieren
+        
+        # Initialisierung des ersten Frames
+        if prev_gray is None:
+            prev_gray = gray
+            continue
+        
+        # YOLOv8 auf das aktuelle Frame anwenden
+        results = model(frame, conf=0.3)
+        detected_labels = [model.names[int(box.cls)] for box in results[0].boxes]
 
-        # YOLO-Modell auf das aktuelle Frame anwenden
-        results = model(frame)  # YOLO Vorhersage auf diesem Frame
+        # Bewegungserkennung
+        flow = cv2.calcOpticalFlowFarneback(prev_gray, gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+        movement = np.sum(np.abs(flow))  # Summierte Bewegung
+        bewegungs_puffer.append(movement)
+        if len(bewegungs_puffer) > 10:
+            bewegungs_puffer.pop(0)
+        
+        bewegung_mittelwert = np.mean(bewegungs_puffer)
+        prev_gray = gray  # Setze das aktuelle Frame als vorheriges Frame
+        
+        # **Stillstandserkennung**
+        if "Tür_offen" in detected_labels:
+            if any(obj in detected_labels for obj in ["Zange", "Messschieber", "Einstellwerkzeug", "Werkzeugkalibrierung"]):
+                if not geplanter_stillstand:
+                    geplanter_stillstand = True
+                    stillstand_start = time.time()
+            elif "Späneentferner" in detected_labels:
+                if not ungeplanter_stillstand:
+                    ungeplanter_stillstand = True
+                    stillstand_start = time.time()
+            elif bewegung_mittelwert < bewegungs_grenze:
+                if not ungeplanter_stillstand:
+                    ungeplanter_stillstand = True
+                    stillstand_start = time.time()
+        
+        # **Stillstand beenden**
+        if geplanter_stillstand and not any(obj in detected_labels for obj in ["Zange", "Messschieber", "Einstellwerkzeug", "Werkzeugkalibrierung"]):
+            geplanter_stillstand = False
+        
+        if ungeplanter_stillstand and not ("Tür_offen" in detected_labels and ("Späneentferner" in detected_labels or bewegung_mittelwert < bewegungs_grenze)):
+            ungeplanter_stillstand = False
 
-        # Ergebnisse visualisieren
-        for result in results.xywh[0]:
-            x, y, w, h, conf, cls = result  # Extrahiere x, y, Breite, Höhe, Konfidenz und Klasse
-            if conf > 0.5:  # Filtere nach einer minimalen Konfidenz
-                x1, y1, x2, y2 = int(x - w / 2), int(y - h / 2), int(x + w / 2), int(y + h / 2)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)  # Rechteck um erkannte Objekte
-                cv2.putText(frame, f"{model.names[int(cls)]} {conf:.2f}", (x1, y1 - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        # **Anzeige im Video**
+        stillstand_text = "Geplant: {} | Ungeplant: {}".format(
+            "Ja" if geplanter_stillstand else "Nein", 
+            "Ja" if ungeplanter_stillstand else "Nein"
+        )
+        cv2.putText(frame, stillstand_text, (10, height - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        
+        # Ergebnisse anzeigen & speichern
+        annotated_frame = results[0].plot()
+        out.write(annotated_frame)
+        st.image(annotated_frame, channels="BGR", use_column_width=True)  # Zeige Frame im Streamlit
 
-        # Frame anzeigen
-        st.image(frame, channels="BGR", use_column_width=True)  # Anzeigen des aktuellen Frames in der App
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    # 7⃣ Alles freigeben
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
 
-    cap.release()  # Video freigeben, wenn wir fertig sind
+    st.success(f"✅ Ergebnis-Video gespeichert in {output_path}")
