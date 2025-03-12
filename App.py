@@ -1,24 +1,17 @@
-import os
-import requests
+import gdown
 from ultralytics import YOLO
+import os
 
-# GitHub Raw URL zum Modell (ersetze durch deine tatsächliche URL)
-GITHUB_MODEL_URL = "https://raw.githubusercontent.com/NicolasGfeld/Stillstand/best.pt"
-LOCAL_MODEL_PATH = "best.pt"
+# Google Drive Datei-ID (ersetzen mit deiner ID!)
+file_id = "https://drive.google.com/file/d/1hzHnlqe3FCQ8fSOwIRY0SPh_UY1cUAoA/view?usp=drive_link"  # <-- Ersetze das mit deiner Datei-ID
+output_path = "best.pt"
 
-# Prüfen, ob das Modell bereits existiert, wenn nicht -> herunterladen
-if not os.path.exists(LOCAL_MODEL_PATH):
-    print("🔽 YOLO-Modell wird heruntergeladen...")
-    response = requests.get(GITHUB_MODEL_URL, stream=True)
-    with open(LOCAL_MODEL_PATH, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-    print("✅ Download abgeschlossen!")
-else:
-    print("✅ Modell bereits vorhanden.")
+# Falls die Datei noch nicht existiert, herunterladen
+if not os.path.exists(output_path):
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, output_path, quiet=False)
+    print("✅ Modell heruntergeladen!")
 
 # YOLO-Modell laden
-model = YOLO(LOCAL_MODEL_PATH)
-
-# Jetzt kannst du das Modell normal weiterverwenden
-# Beispiel: model.predict("test_image.jpg")
+model = YOLO(output_path)
+print("✅ Modell erfolgreich geladen!")
