@@ -1,8 +1,9 @@
 streamlit
 gdown
 ultralytics
-opencv-python
+opencv-python-headless
 numpy
 Pillow
 torch
 torchvision
+PyYAML
