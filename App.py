@@ -1,20 +1,24 @@
-import streamlit as st
 import os
+import requests
+from ultralytics import YOLO
 
-# 🎬 Titel der App
-st.title("📹 Video-Upload für Stillstandserkennung")
+# GitHub Raw URL zum Modell (ersetze durch deine tatsächliche URL)
+GITHUB_MODEL_URL = "https://raw.githubusercontent.com/NicolasGfeld/Stillstand/best.pt"
+LOCAL_MODEL_PATH = "best.pt"
 
-# 🌟 Upload-Bereich für Videos
-uploaded_file = st.file_uploader("Ziehe dein Video hierher oder wähle eine Datei aus", type=["mp4", "avi", "mov"])
+# Prüfen, ob das Modell bereits existiert, wenn nicht -> herunterladen
+if not os.path.exists(LOCAL_MODEL_PATH):
+    print("🔽 YOLO-Modell wird heruntergeladen...")
+    response = requests.get(GITHUB_MODEL_URL, stream=True)
+    with open(LOCAL_MODEL_PATH, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+    print("✅ Download abgeschlossen!")
+else:
+    print("✅ Modell bereits vorhanden.")
 
-if uploaded_file is not None:
-    # Speichere das hochgeladene Video temporär
-    video_path = os.path.join("temp_video.mp4")
-    
-    with open(video_path, "wb") as f:
-        f.write(uploaded_file.read())
+# YOLO-Modell laden
+model = YOLO(LOCAL_MODEL_PATH)
 
-    # 📽️ Zeige das Video an
-    st.video(video_path)
-
-    st.success("✅ Video erfolgreich hochgeladen!")
+# Jetzt kannst du das Modell normal weiterverwenden
+# Beispiel: model.predict("test_image.jpg")
