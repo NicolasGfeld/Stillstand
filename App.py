@@ -18,9 +18,15 @@ def main():
     if uploaded_file is not None:
         file_path = save_uploaded_file(uploaded_file)
         st.success(f"Datei gespeichert unter: {file_path}")
+        st.write(f"Gespeicherter Pfad: {file_path}")
         
-        # Video abspielen
-        st.video(str(file_path))
+        # Video abspielen (alternative Methoden für bessere Kompatibilität)
+        try:
+            with open(file_path, "rb") as video_file:
+                video_bytes = video_file.read()
+            st.video(video_bytes)
+        except Exception as e:
+            st.error(f"Fehler beim Abspielen des Videos: {e}")
 
 if __name__ == "__main__":
     main()
