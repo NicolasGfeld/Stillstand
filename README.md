@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 ### 4️⃣ **Start der Anwendung**
 
-streamlit run app.py
+streamlit run App.py
 
 
 ---
